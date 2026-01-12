@@ -10,9 +10,13 @@ Le domande vengono caricate in tempo reale dal servizio pubblico OpenTriviaDB e 
 
 ## Architettura  
 
-==GameSession== : Stato globale della sessione  
-QuizPage:	Logica principale del gioco  
-ScorePage:	Visualizzazione delle statistiche  
-OpenTriviaDB API:	Servizio che fornisce domande a scelta multipla  
+`GameSession`: Stato globale della sessione  
+`QuizPage`:	Logica principale del gioco  
+`ScorePage`:	Visualizzazione delle statistiche  
+`OpenTriviaDB API`:	Servizio che fornisce domande a scelta multipla  
 
-## 
+## Installazione  
+  
+1. clona il progetto  
+2. installa le dipendenze con: `flutter pub get`  
+3. avvia l'app con `flutter run`
