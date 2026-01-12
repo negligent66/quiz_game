@@ -1,16 +1,18 @@
-# quiz_game
+# Infinite Quiz
 
-A new Flutter project.
+un quiz che va all'infinito, con un punteggio di sessione.  
 
-## Getting Started
+## Descrizione  
 
-This project is a starting point for a Flutter application.
+Infinite Quiz è un'app mobile sviluppata con Flutter che permette all’utente di giocare a un quiz a con un flusso di domande infinito.  
 
-A few resources to get you started if this is your first Flutter project:
+Le domande vengono caricate in tempo reale dal servizio pubblico OpenTriviaDB e il punteggio della sessione viene visualizzato nella scheda Sessione.  
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+## Architettura  
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+---GameSession---: Stato globale della sessione  
+QuizPage:	Logica principale del gioco  
+ScorePage:	Visualizzazione delle statistiche  
+OpenTriviaDB API:	Servizio che fornisce domande a scelta multipla  
+
+## 
