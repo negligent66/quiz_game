@@ -10,7 +10,7 @@ Le domande vengono caricate in tempo reale dal servizio pubblico OpenTriviaDB e 
 
 ## Architettura  
 
----GameSession---: Stato globale della sessione  
+---GameSession: Stato globale della sessione  
 QuizPage:	Logica principale del gioco  
 ScorePage:	Visualizzazione delle statistiche  
 OpenTriviaDB API:	Servizio che fornisce domande a scelta multipla  
