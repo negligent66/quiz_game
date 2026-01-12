@@ -1,287 +1,210 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:html_unescape/html_unescape.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const QuizApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class GameSession {
+  static int answered = 0;
+  static int correct = 0;
+}
+
+class QuizApp extends StatelessWidget {
+  const QuizApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Quiz App',
-      theme: ThemeData.from(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-      ),
-      initialRoute: '/',
-      routes: {
-        '/': (ctx) => const HomeScreen(),
-        '/quiz': (ctx) => const QuizScreen(),
-        '/score': (ctx) => const ScoreScreen(),
-      },
+      debugShowCheckedModeBanner: false,
+      home: const HomePage(),
     );
   }
 }
-class MainScaffold extends StatelessWidget {
-  final int currentIndex;
-  final Widget body;
-  final String title;
-  const MainScaffold({
-    super.key,
-    required this.currentIndex,
-    required this.body,
-    required this.title,
-  });
 
-  void _onTap(BuildContext context, int idx) {
-    final route = idx == 0 ? '/' : idx == 1 ? '/quiz' : '/score';
-    if (ModalRoute.of(context)?.settings.name != route) {
-      Navigator.pushReplacementNamed(context, route);
-    }
-  }
+class HomePage extends StatefulWidget {
+  const HomePage({super.key});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  int index = 0;
+
+  final pages = const [QuizPage(), ScorePage()];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
-      body: body,
+      appBar: AppBar(title: const Text("Infinite Quiz")),
+      body: pages[index],
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: currentIndex,
-        onTap: (idx) => _onTap(context, idx),
+        currentIndex: index,
+        onTap: (i) => setState(() => index = i),
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.quiz), label: 'Quiz'),
-          BottomNavigationBarItem(icon: Icon(Icons.score), label: 'Punteggio'),
+          BottomNavigationBarItem(icon: Icon(Icons.quiz), label: "Quiz"),
+          BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: "Sessione"),
         ],
       ),
     );
   }
 }
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+
+/* ---------------- QUIZ ---------------- */
+String decodeHtml(String text) {
+  return text
+      .replaceAll("&quot;", "\"")
+      .replaceAll("&#039;", "'")
+      .replaceAll("&amp;", "&")
+      .replaceAll("&lt;", "<")
+      .replaceAll("&gt;", ">");
+}
+
+class QuizPage extends StatefulWidget {
+  const QuizPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MainScaffold(
-      currentIndex: 0,
-      title: 'Home',
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Text('Benvenuto al Quiz!', style: TextStyle(fontSize: 24)),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: () {
-                Navigator.pushReplacementNamed(context, '/quiz');
-              },
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('Inizia Quiz'),
-            ),
-            const SizedBox(height: 8),
-            ElevatedButton(
-              onPressed: () {
-                // Avvia quiz rapido con default
-                Navigator.pushReplacementNamed(context, '/quiz');
-              },
-              child: const Text('Quiz veloce (10 domande)'),
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
-}
-class Question {
-  final String question;
-  final String correctAnswer;
-  final List<String> allAnswers;
-
-  Question({
-    required this.question,
-    required this.correctAnswer,
-    required this.allAnswers,
-  });
-
-  factory Question.fromMap(Map<String, dynamic> m) {
-    final unescape = HtmlUnescape();
-    final q = unescape.convert(m['question'] as String);
-    final correct = unescape.convert(m['correct_answer'] as String);
-    final incorrect = (m['incorrect_answers'] as List<dynamic>)
-        .map((e) => unescape.convert(e as String))
-        .toList();
-    final answers = List<String>.from(incorrect)..add(correct);
-    answers.shuffle();
-    return Question(
-      question: q,
-      correctAnswer: correct,
-      allAnswers: answers,
-    );
-  }
-}
-class QuizScreen extends StatefulWidget {
-  const QuizScreen({super.key});
-
-  @override
-  State<QuizScreen> createState() => _QuizScreenState();
+  State<QuizPage> createState() => _QuizPageState();
 }
 
-class _QuizScreenState extends State<QuizScreen> {
-  List<Question> _questions = [];
-  int _index = 0;
-  int _score = 0;
-  bool _loading = true;
-  int? _selected; // index selezionato per la domanda corrente
-  bool _answered = false;
+class _QuizPageState extends State<QuizPage> {
+  Map question = {};
+  List<String> options = [];
+
+  bool loading = true;
+  bool locked = false;
+  String selected = "";
 
   @override
   void initState() {
     super.initState();
-    _fetchQuestions();
+    loadQuestion();
   }
 
-  Future<void> _fetchQuestions({int amount = 10}) async {
-    setState(() {
-      _loading = true;
-      _questions = [];
-      _index = 0;
-      _score = 0;
-      _selected = null;
-      _answered = false;
-    });
-    final uri = Uri.parse('https://opentdb.com/api.php?amount=$amount&type=multiple');
-    final res = await http.get(uri);
-    if (res.statusCode == 200) {
-      final data = json.decode(res.body) as Map<String, dynamic>;
-      final results = data['results'] as List<dynamic>;
-      _questions = results.map((e) => Question.fromMap(e as Map<String, dynamic>)).toList();
-    }
-    setState(() {
-      _loading = false;
-    });
-  }
+  Future<void> loadQuestion() async {
+    try {
+      final url = Uri.parse("https://opentdb.com/api.php?amount=1&type=multiple");
+      final res = await http.get(url);
 
-  void _selectAnswer(int idx) {
-    if (_answered) return;
-    setState(() {
-      _selected = idx;
-      _answered = true;
-      final selectedText = _questions[_index].allAnswers[idx];
-      if (selectedText == _questions[_index].correctAnswer) {
-        _score++;
+      final data = json.decode(res.body);
+
+      if (data == null ||
+          data['response_code'] != 0 ||
+          data['results'] == null ||
+          data['results'].isEmpty) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        return loadQuestion();
       }
+
+      question = data['results'][0];
+
+      options = List<String>.from(question['incorrect_answers']);
+      options.add(question['correct_answer']);
+      options.shuffle();
+
+      if (!mounted) return;
+
+      setState(() {
+        loading = false;
+        locked = false;
+        selected = "";
+      });
+    } catch (e) {
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (mounted) loadQuestion();
+    }
+  }
+
+  void answer(String value) {
+    if (locked) return;
+
+    locked = true;
+    selected = value;
+    GameSession.answered++;
+
+    if (value == question['correct_answer']) {
+      GameSession.correct++;
+    }
+
+    setState(() {});
+
+    Future.delayed(const Duration(milliseconds: 900), () {
+      setState(() => loading = true);
+      loadQuestion();
     });
   }
 
-  void _next() {
-    if (_index + 1 >= _questions.length) {
-      Navigator.pushReplacementNamed(context, '/score', arguments: {'score': _score, 'total': _questions.length});
-      return;
-    }
-    setState(() {
-      _index++;
-      _selected = null;
-      _answered = false;
-    });
+  Color getColor(String value) {
+    if (!locked) return Colors.lightBlueAccent;
+
+    if (value == question['correct_answer']) return Colors.green;
+    if (value == selected) return Colors.red;
+
+    return Colors.lightBlueAccent;
   }
 
   @override
   Widget build(BuildContext context) {
-    return MainScaffold(
-      currentIndex: 1,
-      title: 'Quiz',
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(children: [
-          Text('Domanda ${_index + 1} / ${_questions.length}', style: const TextStyle(fontSize: 16)),
-          const SizedBox(height: 12),
-          Text(_questions[_index].question, style: const TextStyle(fontSize: 20)),
-          const SizedBox(height: 16),
-          ..._questions[_index].allAnswers.asMap().entries.map((e) {
-            final idx = e.key;
-            final text = e.value;
-            Color? color;
-            if (_answered) {
-              if (text == _questions[_index].correctAnswer) {
-                color = Colors.green;
-              } else if (_selected == idx) {
-                color = Colors.red;
-              } else {
-                color = null;
-              }
-            }
-            return Container(
-              margin: const EdgeInsets.symmetric(vertical: 6),
-              child: ElevatedButton(
+    if (loading) return const Center(child: CircularProgressIndicator());
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            decodeHtml(question['question']),
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 20),
+          ),
+          const SizedBox(height: 30),
+
+          GridView.count(
+            shrinkWrap: true,
+            crossAxisCount: 2,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 2.8,
+            children: options.map((o) {
+              return ElevatedButton(
+                onPressed: () => answer(o),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: color,
-                  minimumSize: const Size.fromHeight(48),
+                  backgroundColor: getColor(o),
                 ),
-                onPressed: _answered ? null : () => _selectAnswer(idx),
-                child: Text(text),
-              ),
-            );
-          }),
-          const Spacer(),
-          Row(children: [
-            Expanded(
-              child: ElevatedButton(
-                onPressed: _answered ? _next : null,
-                child: Text(_index + 1 >= _questions.length ? 'Termina' : 'Prossima'),
-              ),
-            ),
-            const SizedBox(width: 12),
-            ElevatedButton(
-              onPressed: () => _fetchQuestions(),
-              child: const Text('Ricarica'),
-            )
-          ])
-        ]),
+                child: Text(decodeHtml(o), textAlign: TextAlign.center),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }
 }
-class ScoreScreen extends StatelessWidget {
-  const ScoreScreen({super.key});
+
+/* ---------------- SCORE ---------------- */
+
+class ScorePage extends StatelessWidget {
+  const ScorePage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>? ?? {'score': 0, 'total': 0};
-    final int score = args['score'] as int;
-    final int total = args['total'] as int;
+    double accuracy = GameSession.answered == 0
+        ? 0
+        : (GameSession.correct / GameSession.answered) * 100;
 
-    return MainScaffold(
-      currentIndex: 2,
-      title: 'Punteggio',
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text('Hai totalizzato', style: const TextStyle(fontSize: 20)),
-            const SizedBox(height: 8),
-            Text('$score / $total', style: const TextStyle(fontSize: 36, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pushReplacementNamed(context, '/');
-              },
-              child: const Text('Torna alla Home'),
-            ),
-            const SizedBox(height: 8),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pushReplacementNamed(context, '/quiz');
-              },
-              child: const Text('Gioca di nuovo'),
-            ),
-          ]),
-        ),
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text("Domande risposte: ${GameSession.answered}",
+              style: const TextStyle(fontSize: 22)),
+          Text("Corrette: ${GameSession.correct}",
+              style: const TextStyle(fontSize: 22)),
+          Text("Precisione: ${accuracy.toStringAsFixed(1)}%",
+              style: const TextStyle(fontSize: 22)),
+        ],
       ),
     );
   }
